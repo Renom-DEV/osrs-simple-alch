@@ -71,15 +71,20 @@ class SimpleAlchApp(ctk.CTk):
         self.after(1000, lambda: self.status_bar.configure(text="Prices updated successfully"))
 
     def open_configuration(self):
-        """Open Configuration window (placeholder for now)"""
+        """Open Configuration window as a modal dialog"""
         config_window = ctk.CTkToplevel(self)
         config_window.title("Configuration")
         config_window.geometry("520x450")
         config_window.resizable(False, False)
 
+        # Make it behave like a proper dialog
+        config_window.transient(self)      # Attach to main window
+        config_window.grab_set()           # Make it modal (blocks main window)
+        config_window.attributes("-topmost", True)  # Force on top
+
         label = ctk.CTkLabel(
             config_window, 
-            text="Configuration Panel\n\nThis is where you will set:\n• Nature Rune cost\n• Fire Rune method & cost\n• GE Price type (Low/High/Average)\n• Auto-refresh settings", 
+        text="Configuration Panel\n\nThis is where you will set:\n• Nature Rune cost\n• Fire Rune method & cost\n• GE Price type (Low/High/Average)\n• Auto-refresh settings", 
             font=ctk.CTkFont(size=14),
             justify="left"
         )
