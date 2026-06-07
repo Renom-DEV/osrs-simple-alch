@@ -7,7 +7,7 @@ class SimpleAlchApp(ctk.CTk):
         super().__init__()
 
         self.title("SimpleAlch - OSRS High Alchemy Tool")
-        self.geometry("1350x780")          # More compact
+        self.geometry("1350x780")
         self.minsize(1250, 700)
 
         ctk.set_appearance_mode("dark")
@@ -25,13 +25,15 @@ class SimpleAlchApp(ctk.CTk):
         self.all_items = []
         self.current_page = 1
         self.items_per_page = 100
+        self.search_query = ""
 
         self._create_top_bar()
-        self._create_pagination_controls()
+        self._create_search_and_pagination()
         self._create_main_area()
         self._create_status_bar()
 
         self.after(500, self.load_initial_data)
+        self.after(60000, self.background_auto_refresh)
 
     def _create_top_bar(self):
         self.top_bar = ctk.CTkFrame(self, height=45, corner_radius=0)
@@ -49,35 +51,47 @@ class SimpleAlchApp(ctk.CTk):
                                         command=self.open_configuration)
         self.config_btn.pack(side="right", padx=8, pady=6)
 
-    def _create_pagination_controls(self):
-        self.pagination_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.pagination_frame.pack(fill="x", padx=12, pady=(3, 0))
+    def _create_search_and_pagination(self):
+        self.search_pagination_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.search_pagination_frame.pack(fill="x", padx=12, pady=(3, 0))
 
-        ctk.CTkLabel(self.pagination_frame, text="Show:").pack(side="left", padx=(0, 4))
+        # Search Bar
+        ctk.CTkLabel(self.search_pagination_frame, text="Search:").pack(side="left", padx=(0, 5))
+        self.search_entry = ctk.CTkEntry(self.search_pagination_frame, width=250, placeholder_text="Search item name...")
+        self.search_entry.pack(side="left", padx=(0, 8))
+        self.search_entry.bind("<KeyRelease>", self.on_search)
+
+        clear_btn = ctk.CTkButton(self.search_pagination_frame, text="Clear", width=55,
+                                  command=self.clear_search)
+        clear_btn.pack(side="left", padx=(0, 15))
+
+        # Items per page
+        ctk.CTkLabel(self.search_pagination_frame, text="Show:").pack(side="left", padx=(0, 4))
         self.items_per_page_var = ctk.StringVar(value="100")
         items_menu = ctk.CTkOptionMenu(
-            self.pagination_frame, values=["50", "100", "150"],
+            self.search_pagination_frame, values=["50", "100", "150"],
             variable=self.items_per_page_var, width=65,
             command=self.change_items_per_page
         )
         items_menu.pack(side="left", padx=(0, 15))
 
-        self.prev_btn = ctk.CTkButton(self.pagination_frame, text="<", width=35,
+        # Pagination
+        self.prev_btn = ctk.CTkButton(self.search_pagination_frame, text="<", width=35,
                                       command=self.prev_page)
         self.prev_btn.pack(side="left", padx=3)
 
-        self.page_entry = ctk.CTkEntry(self.pagination_frame, width=45, justify="center")
+        self.page_entry = ctk.CTkEntry(self.search_pagination_frame, width=45, justify="center")
         self.page_entry.pack(side="left", padx=4)
         self.page_entry.bind("<Return>", self.jump_to_page)
 
-        self.page_label = ctk.CTkLabel(self.pagination_frame, text="/ 1", width=35)
+        self.page_label = ctk.CTkLabel(self.search_pagination_frame, text="/ 1", width=35)
         self.page_label.pack(side="left", padx=2)
 
-        self.next_btn = ctk.CTkButton(self.pagination_frame, text=">", width=35,
+        self.next_btn = ctk.CTkButton(self.search_pagination_frame, text=">", width=35,
                                       command=self.next_page)
         self.next_btn.pack(side="left", padx=3)
 
-        self.total_label = ctk.CTkLabel(self.pagination_frame, text="Total items: 0")
+        self.total_label = ctk.CTkLabel(self.search_pagination_frame, text="Total items: 0")
         self.total_label.pack(side="left", padx=15)
 
     def _create_main_area(self):
@@ -111,8 +125,20 @@ class SimpleAlchApp(ctk.CTk):
         self.tree.pack(fill="both", expand=True, padx=8, pady=8)
 
     def _create_status_bar(self):
-        self.status_bar = ctk.CTkLabel(self, text="Loading...", anchor="w", font=ctk.CTkFont(size=11))
+        self.status_bar = ctk.CTkLabel(self, text="Loading... • Auto-refresh: Active", anchor="w", font=ctk.CTkFont(size=11))
         self.status_bar.pack(fill="x", padx=12, pady=(0, 6))
+
+    # ==================== SEARCH ====================
+    def on_search(self, event=None):
+        self.search_query = self.search_entry.get().lower().strip()
+        self.current_page = 1
+        self.populate_table()
+
+    def clear_search(self):
+        self.search_entry.delete(0, "end")
+        self.search_query = ""
+        self.current_page = 1
+        self.populate_table()
 
     # ==================== PAGINATION ====================
     def change_items_per_page(self, value):
@@ -146,16 +172,23 @@ class SimpleAlchApp(ctk.CTk):
             self.page_entry.insert(0, str(self.current_page))
 
     def get_total_pages(self):
-        if not self.all_items:
+        items = self.get_filtered_items()
+        if not items:
             return 1
-        return max(1, (len(self.all_items) + self.items_per_page - 1) // self.items_per_page)
+        return max(1, (len(items) + self.items_per_page - 1) // self.items_per_page)
+
+    def get_filtered_items(self):
+        if self.search_query:
+            return [item for item in self.all_items 
+                    if self.search_query in item[1].get("name", "").lower()]
+        return self.all_items
 
     def update_pagination_ui(self):
         total_pages = self.get_total_pages()
         self.page_label.configure(text=f"/ {total_pages}")
         self.page_entry.delete(0, "end")
         self.page_entry.insert(0, str(self.current_page))
-        self.total_label.configure(text=f"Total items: {len(self.all_items)}")
+        self.total_label.configure(text=f"Total items: {len(self.get_filtered_items())}")
 
         self.prev_btn.configure(state="normal" if self.current_page > 1 else "disabled")
         self.next_btn.configure(state="normal" if self.current_page < total_pages else "disabled")
@@ -178,7 +211,7 @@ class SimpleAlchApp(ctk.CTk):
                         filtered_items.append((item_id, item))
 
             self.all_items = sorted(filtered_items, key=lambda x: x[1].get("name", "").lower())
-            self.status_bar.configure(text=f"Loaded {len(self.all_items)} tradeable items")
+            self.status_bar.configure(text=f"Loaded {len(self.all_items)} tradeable items • Auto-refresh: Active")
             self.current_page = 1
             self.populate_table()
         else:
@@ -188,13 +221,14 @@ class SimpleAlchApp(ctk.CTk):
         self.status_bar.configure(text="Refreshing prices...")
         self.latest_data = api.fetch_latest() or {}
         self.populate_table()
-        self.status_bar.configure(text="Prices refreshed")
+        self.status_bar.configure(text="Prices refreshed • Auto-refresh: Active")
 
     def populate_table(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        if not self.all_items:
+        items_to_show = self.get_filtered_items()
+        if not items_to_show:
             return
 
         nature_cost = int(self.settings["nature_price"]) if self.settings["nature_price"].isdigit() else 0
@@ -204,7 +238,7 @@ class SimpleAlchApp(ctk.CTk):
 
         start = (self.current_page - 1) * self.items_per_page
         end = start + self.items_per_page
-        page_items = self.all_items[start:end]
+        page_items = items_to_show[start:end]
 
         for item_id, item in page_items:
             name = item.get("name", "Unknown")
@@ -263,11 +297,25 @@ class SimpleAlchApp(ctk.CTk):
         self.current_page = 1
         self.populate_table()
 
+    # ==================== BACKGROUND AUTO-REFRESH ====================
+    def background_auto_refresh(self):
+        try:
+            new_latest = api.fetch_latest()
+            if new_latest:
+                self.latest_data = new_latest
+                self.populate_table()
+                self.status_bar.configure(text=f"Auto-refreshed • {len(self.all_items)} items • Auto-refresh: Active")
+        except Exception as e:
+            print(f"Auto-refresh error: {e}")
+
+        # Schedule next refresh in 60 seconds
+        self.after(60000, self.background_auto_refresh)
+
     # ==================== CONFIGURATION ====================
     def open_configuration(self):
         self.config_window = ctk.CTkToplevel(self)
         self.config_window.title("Configuration")
-        self.config_window.geometry("560x520")     # More compact
+        self.config_window.geometry("560x520")
         self.config_window.resizable(False, False)
         self.config_window.transient(self)
         self.config_window.grab_set()
@@ -333,7 +381,6 @@ class SimpleAlchApp(ctk.CTk):
         ctk.CTkRadioButton(self.config_window, text="Average (Recommended)", variable=self.price_type_var, value="average",
                            command=self.update_price_type_live).pack(anchor="w", padx=25)
 
-    # ==================== LIVE UPDATE METHODS ====================
     def update_settings_live(self):
         self.settings["fire_method"] = self.fire_method_var.get()
         self.populate_table()
