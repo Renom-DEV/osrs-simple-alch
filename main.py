@@ -35,10 +35,12 @@ class SimpleAlchApp(ctk.CTk):
             "fire_method": "staff",
             "fire_price": "",
             "price_type": "average",
+            "volume_type": "both",
         }
 
         self.mapping_data = {}
         self.latest_data = {}
+        self.volume_data = {}
         self.all_items = []
         self.item_tags = {}
         self.show_favorites_only = False
@@ -164,7 +166,7 @@ class SimpleAlchApp(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self, corner_radius=6)
         self.main_frame.pack(fill="both", expand=True, padx=12, pady=8)
 
-        columns = ("favorite", "members", "name", "high_alch", "ge_price", "profit", "total_profit", "total_investment", "buy_limit")
+        columns = ("favorite", "members", "name", "high_alch", "ge_price", "profit", "total_profit", "total_investment", "daily_volume", "buy_limit")
         self.tree = ttk.Treeview(self.main_frame, columns=columns, show="headings", height=24)
 
         self.tree.heading("favorite", text="★")
@@ -175,6 +177,7 @@ class SimpleAlchApp(ctk.CTk):
         self.tree.heading("profit", text="Profit/Cast")
         self.tree.heading("total_profit", text="Total Profit")
         self.tree.heading("total_investment", text="Total Investment")
+        self.tree.heading("daily_volume", text="Daily Volume")
         self.tree.heading("buy_limit", text="Buy Limit")
 
         self.tree.column("favorite", width=35, anchor="center", stretch=False)
@@ -185,6 +188,7 @@ class SimpleAlchApp(ctk.CTk):
         self.tree.column("profit", width=80, anchor="center")
         self.tree.column("total_profit", width=95, anchor="center")
         self.tree.column("total_investment", width=105, anchor="center")
+        self.tree.column("daily_volume", width=100, anchor="center")
         self.tree.column("buy_limit", width=65, anchor="center", stretch=False)
 
         for col in columns:
@@ -282,6 +286,7 @@ class SimpleAlchApp(ctk.CTk):
         self.status_bar.configure(text="Loading data from API (with cache)...")
         self.mapping_data = api.fetch_mapping() or {}
         self.latest_data = api.fetch_latest() or {}
+        self.volume_data = api.fetch_24h_volume() or {}
 
         if self.mapping_data and self.latest_data:
             filtered_items = []
@@ -327,6 +332,7 @@ class SimpleAlchApp(ctk.CTk):
         fire_cost = int(self.settings["fire_price"]) if self.settings["fire_price"].isdigit() else 0
         rune_cost = nature_cost + fire_cost if self.settings["fire_method"] == "pay" else nature_cost
         price_type = self.settings["price_type"]
+        volume_type = self.settings.get("volume_type", "both")   # ← NEW
 
         start = (self.current_page - 1) * self.items_per_page
         end = start + self.items_per_page
@@ -343,16 +349,28 @@ class SimpleAlchApp(ctk.CTk):
             total_profit = profit * buy_limit if buy_limit else 0
             total_investment = ge_price * buy_limit if buy_limit else 0
 
+            # NEW: Get Daily Volume
+            daily_volume = api.get_item_volume(self.volume_data, item_id, volume_type)
+
             tag = self.item_tags.get(item_id, "")
             fav_display = "★" if tag == "fav" else "☆"
             members_display = "★" if is_members else ""
 
             self.tree.insert("", "end", values=(
-                fav_display, members_display, name, high_alch, ge_price, profit, total_profit, total_investment, buy_limit
+                fav_display, 
+                members_display, 
+                name, 
+                high_alch, 
+                ge_price, 
+                profit, 
+                total_profit, 
+                total_investment, 
+                daily_volume,           # ← NEW
+                buy_limit
             ), tags=(str(item_id),))
 
         self.update_pagination_ui()
-
+        
     def sort_by_column(self, col):
         reverse = not getattr(self, f"_sort_reverse_{col}", False)
         setattr(self, f"_sort_reverse_{col}", reverse)
@@ -583,7 +601,22 @@ class SimpleAlchApp(ctk.CTk):
                            command=self.update_price_type_live).pack(anchor="w", padx=25)
         ctk.CTkRadioButton(self.config_window, text="Average (Recommended)", variable=self.price_type_var, value="average",
                            command=self.update_price_type_live).pack(anchor="w", padx=25)
+        
+        ctk.CTkLabel(self.config_window, text="GE Volume Type").pack(anchor="w", padx=25, pady=(10, 0))
+        self.volume_type_var = ctk.StringVar(value=self.settings.get("volume_type", "both"))
 
+        ctk.CTkRadioButton(self.config_window, text="Low Volume", 
+                           variable=self.volume_type_var, value="low",
+                           command=self.update_volume_type_live).pack(anchor="w", padx=25)
+
+        ctk.CTkRadioButton(self.config_window, text="High Volume", 
+                           variable=self.volume_type_var, value="high",
+                           command=self.update_volume_type_live).pack(anchor="w", padx=25)
+
+        ctk.CTkRadioButton(self.config_window, text="Both (Recommended)", 
+                           variable=self.volume_type_var, value="both",
+                           command=self.update_volume_type_live).pack(anchor="w", padx=25)
+        
     def update_settings_live(self):
         self.settings["fire_method"] = self.fire_method_var.get()
         self.save_config()
@@ -599,6 +632,10 @@ class SimpleAlchApp(ctk.CTk):
         self.price_label.configure(
             text=f"Current API Prices ({price_type.capitalize()}):   Nature: {nature_api_price} gp   |   Fire: {fire_api_price} gp"
         )
+
+    def update_volume_type_live(self):
+        self.settings["volume_type"] = self.volume_type_var.get()
+        self.populate_table()
 
     def save_nature_price(self):
         self.settings["nature_price"] = self.nature_entry.get().strip()
