@@ -5,6 +5,7 @@ import api
 import json
 import os
 import tkinter as tk
+import datetime
 
 # Set the config/cache file
 CONFIG_FILE = "config.json"
@@ -41,10 +42,11 @@ class SimpleAlchApp(ctk.CTk):
         self.items_per_page = 100
         self.search_query = ""
         # Smart Fast Sync variables
+        self.runelite_sync_var = ctk.BooleanVar(value=self.settings.get("runelite_sync_enabled", False))
         self.fast_sync_active = False
         self.fast_sync_attempts = 0
         self.max_fast_sync_attempts = 60
-
+    
         self.load_config()
         # Builds the UI
         self._create_top_bar()
@@ -54,6 +56,14 @@ class SimpleAlchApp(ctk.CTk):
         # Schedules initial data and background auto-refresh after startup
         self.after(500, self.load_initial_data)
         self.after(60000, self.background_auto_refresh)
+
+        # RuneLite Sync initialization (mejorado)
+        self.runelite_sync_var = ctk.BooleanVar(value=self.settings.get("runelite_sync_enabled", False))
+        if self.settings.get("runelite_sync_enabled", False):
+            self.after(600, self.update_runelite_sync)
+            if self.settings.get("runelite_account"):
+                self.after(1100, self.load_runelite_data)
+                self.after(1300, self.populate_table)
 
     # Loads saved user settings and favorites from config.json when the app starts
     def load_config(self):
@@ -156,7 +166,7 @@ class SimpleAlchApp(ctk.CTk):
         self.main_frame.pack(fill="both", expand=True, padx=12, pady=8)
 
         columns = ("favorite", "members", "name", "high_alch", "ge_price", "profit", 
-                   "total_profit", "total_investment", "daily_volume", "buy_limit")
+                   "total_profit", "total_investment", "daily_volume", "bought_today", "buy_limit")
         self.tree = ttk.Treeview(self.main_frame, columns=columns, show="headings", height=24)
 
         self.tree.heading("favorite", text="★")
@@ -168,6 +178,7 @@ class SimpleAlchApp(ctk.CTk):
         self.tree.heading("total_profit", text="Total Profit")
         self.tree.heading("total_investment", text="Total Investment")
         self.tree.heading("daily_volume", text="Daily Volume")
+        self.tree.heading("bought_today", text="Bought Today")
         self.tree.heading("buy_limit", text="Buy Limit")
 
         self.tree.column("favorite", width=35, anchor="center", stretch=False)
@@ -179,6 +190,7 @@ class SimpleAlchApp(ctk.CTk):
         self.tree.column("total_profit", width=95, anchor="center")
         self.tree.column("total_investment", width=105, anchor="center")
         self.tree.column("daily_volume", width=100, anchor="center")
+        self.tree.column("bought_today", width=65, anchor="center", stretch=False)
         self.tree.column("buy_limit", width=65, anchor="center", stretch=False)
 
         for col in columns:
@@ -187,6 +199,11 @@ class SimpleAlchApp(ctk.CTk):
         self.tree.bind("<Button-3>", self.show_context_menu)
 
         self.tree.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # Colores para la columna Bought Today
+        self.tree.tag_configure("sold_out", background="#ff6b6b", foreground="white")
+        self.tree.tag_configure("almost_full", background="#ffd93d")
+
     # Creates the bottom status bar that shows loading messages, sync status, etc
     def _create_status_bar(self):
         self.status_bar = ctk.CTkLabel(self, text="Loading... • Auto-refresh: Active", anchor="w", font=ctk.CTkFont(size=11))
@@ -334,18 +351,32 @@ class SimpleAlchApp(ctk.CTk):
             profit = high_alch - ge_price - rune_cost
             total_profit = profit * buy_limit if buy_limit else 0
             total_investment = ge_price * buy_limit if buy_limit else 0
-
-            # NEW: Daily Volume
             daily_volume = api.get_item_volume(self.volume_data, item_id, volume_type)
+            bought_today = self.get_today_bought(item_id)
 
             tag = self.item_tags.get(item_id, "")
             fav_display = "★" if tag == "fav" else "☆"
             members_display = "★" if is_members else ""
 
+            # Color según progreso de compra (RuneLite)
+            bought_today = self.get_today_bought(item_id)
+            buy_limit = item.get("limit", 0) or 0
+
+            if isinstance(bought_today, int) and buy_limit > 0:
+                progress = bought_today / buy_limit
+                if progress >= 1.0:
+                    row_tag = "sold_out"
+                elif progress >= 0.7:
+                    row_tag = "almost_full"
+                else:
+                    row_tag = ""
+            else:
+                row_tag = ""
+
             self.tree.insert("", "end", values=(
                 fav_display, members_display, name, high_alch, ge_price, profit, 
-                total_profit, total_investment, daily_volume, buy_limit
-            ), tags=(str(item_id),))
+                total_profit, total_investment, daily_volume, bought_today, buy_limit
+            ), tags=(str(item_id), row_tag))
 
         self.update_pagination_ui()
     # Sorts the whole list when user clicks any column header
@@ -384,6 +415,8 @@ class SimpleAlchApp(ctk.CTk):
                 elif col == "daily_volume":
                     volume_type = self.settings.get("volume_type", "both")
                     return api.get_item_volume(self.volume_data, item_id, volume_type)
+                elif col == "bought_today":
+                    return self.get_today_bought(item_id)
                 return 0
 
         self.all_items.sort(key=get_sort_value, reverse=reverse)
@@ -444,68 +477,78 @@ class SimpleAlchApp(ctk.CTk):
             return [], True  # Folder exists but error reading
     # Handles enabling/disabling the RuneLite sync and updates status
     def update_runelite_sync(self):
+        # Safety check - variable might not exist yet on startup
+        if not hasattr(self, "runelite_sync_var"):
+            return
+
         enabled = self.runelite_sync_var.get()
         self.settings["runelite_sync_enabled"] = enabled
 
         # Clear previous widgets in the account frame
-        for widget in self.runelite_account_frame.winfo_children():
-            widget.destroy()
+        if hasattr(self, "runelite_account_frame"):
+            for widget in self.runelite_account_frame.winfo_children():
+                widget.destroy()
 
         if enabled:
             accounts, folder_exists = self.detect_runelite_data_logger()
             self.runelite_accounts = accounts
 
             if not folder_exists:
-                self.runelite_status_label.configure(text="Data Logger plugin not found", text_color="red")
+                if hasattr(self, "runelite_status_label"):
+                    self.runelite_status_label.configure(text="Data Logger plugin not found", text_color="red")
             elif len(accounts) == 0:
-                self.runelite_status_label.configure(
-                    text="Account(s) not found, buy something from the GE and try again.", 
-                    text_color="red"
-                )
+                if hasattr(self, "runelite_status_label"):
+                    self.runelite_status_label.configure(
+                        text="Account(s) not found, buy something from the GE and try again.", 
+                        text_color="red"
+                    )
             else:
                 current_account = self.settings.get("runelite_account", "")
 
                 if current_account:
-                    # Already linked
-                    self.runelite_status_label.configure(
-                        text=f"Linked to: {current_account}", 
-                        text_color="#00FF00"
-                    )
-                    
-                    # Load data for this account
+                    if hasattr(self, "runelite_status_label"):
+                        self.runelite_status_label.configure(
+                            text=f"Linked to: {current_account}", 
+                            text_color="#00FF00"
+                        )
                     self.load_runelite_data()
+                    # Programar refresco automático cada 45 segundos mientras esté activado
+                    if not hasattr(self, "_runelite_refresh_job"):
+                        self._runelite_refresh_job = self.after(10000, self._periodic_runelite_refresh)
 
-                    # Small Change Account dropdown
-                    change_label = ctk.CTkLabel(self.runelite_account_frame, text="Change Account:")
-                    change_label.pack(side="left", padx=(0, 5))
+                    if hasattr(self, "runelite_account_frame"):
+                        change_label = ctk.CTkLabel(self.runelite_account_frame, text="Change Account:")
+                        change_label.pack(side="left", padx=(0, 5))
 
-                    self.account_var = ctk.StringVar(value=current_account)
-                    account_menu = ctk.CTkOptionMenu(
-                        self.runelite_account_frame,
-                        values=accounts,
-                        variable=self.account_var,
-                        width=140,
-                        command=self.change_runelite_account
-                    )
-                    account_menu.pack(side="left")
-
+                        self.account_var = ctk.StringVar(value=current_account)
+                        account_menu = ctk.CTkOptionMenu(
+                            self.runelite_account_frame,
+                            values=accounts,
+                            variable=self.account_var,
+                            width=140,
+                            command=self.change_runelite_account
+                        )
+                        account_menu.pack(side="left")
                 else:
-                    # Not linked yet → show selection dropdown
-                    self.runelite_status_label.configure(text="Select your OSRS account:", text_color="white")
+                    if hasattr(self, "runelite_status_label"):
+                        self.runelite_status_label.configure(text="Select your OSRS account:", text_color="white")
 
-                    self.account_var = ctk.StringVar(value=accounts[0] if accounts else "")
-                    account_menu = ctk.CTkOptionMenu(
-                        self.runelite_account_frame,
-                        values=accounts,
-                        variable=self.account_var,
-                        width=160,
-                        command=self.select_runelite_account
-                    )
-                    account_menu.pack(side="left")
+                    if hasattr(self, "runelite_account_frame"):
+                        self.account_var = ctk.StringVar(value=accounts[0] if accounts else "")
+                        account_menu = ctk.CTkOptionMenu(
+                            self.runelite_account_frame,
+                            values=accounts,
+                            variable=self.account_var,
+                            width=160,
+                            command=self.select_runelite_account
+                        )
+                        account_menu.pack(side="left")
         else:
-            self.runelite_status_label.configure(text="")
+            if hasattr(self, "runelite_status_label"):
+                self.runelite_status_label.configure(text="")
 
         self.save_config()
+        self.populate_table()
     # Shows a dropdown to choose your account
     def select_runelite_account(self, selected_account):
         self.settings["runelite_account"] = selected_account
@@ -518,20 +561,87 @@ class SimpleAlchApp(ctk.CTk):
         self.update_runelite_sync()   # Refresh the UI
     # Load Data Logger data for the selected account
     def load_runelite_data(self):
-        """Load Data Logger data for the selected account (called when enabled)"""
+        """Load and process Data Logger data for the selected account"""
         account = self.settings.get("runelite_account", "")
         if not account:
             return
 
         base_path = os.path.expanduser(f"~/.runelite/data-logger/grand-exchange/{account}/")
 
-        # For now we just print that we detected the folder (we'll expand this later)
-        if os.path.exists(base_path):
-            print(f"[RuneLite] Data folder found for account: {account}")
-            # TODO: Later we will read the .json and .csv files here
-        else:
-            print(f"[RuneLite] Folder not found for account: {account}")
+        if not os.path.exists(base_path):
+            print(f"[RuneLite] Folder not found: {account}")
+            return
 
+        try:
+            # Load the main JSON file
+            json_files = [f for f in os.listdir(base_path) if f.endswith(".json")]
+            if not json_files:
+                print("[RuneLite] No JSON files found")
+                return
+
+            json_path = os.path.join(base_path, json_files[0])
+            with open(json_path, "r", encoding="utf-8") as f:
+                raw_data = json.load(f)
+
+            # Process data into a usable format
+            self.runelite_data = {}
+            today = datetime.date.today().isoformat()
+
+            for entry in raw_data:
+                item_id = entry.get("itemId")
+                if not item_id:
+                    continue
+
+                if item_id not in self.runelite_data:
+                    self.runelite_data[item_id] = {"today_bought": 0, "all_time": []}
+
+                # Count buys from today
+                offer_time = entry.get("offerCreationTime", 0)
+                if offer_time:
+                    offer_date = datetime.datetime.fromtimestamp(offer_time / 1000).date().isoformat()
+                    if offer_date == today and entry.get("isBuy"):
+                        self.runelite_data[item_id]["today_bought"] += entry.get("quantity", 0)
+
+                self.runelite_data[item_id]["all_time"].append(entry)
+
+            print(f"[RuneLite] Processed data for {len(self.runelite_data)} items. Today's buys tracked.")
+
+        except Exception as e:
+            print(f"[RuneLite] Error loading/processing data: {e}")
+
+    def refresh_runelite_data(self):
+        """Recarga los datos de RuneLite y actualiza la tabla (para actualizaciones en tiempo real)"""
+        if not self.settings.get("runelite_sync_enabled", False):
+            return
+
+        account = self.settings.get("runelite_account", "")
+        if not account:
+            return
+
+        # Solo recargar si ya teníamos datos cargados
+        if hasattr(self, "runelite_data") and self.runelite_data:
+            self.load_runelite_data()
+            print("[RuneLite] Data refreshed (auto)")
+
+    def _periodic_runelite_refresh(self):
+        """Refresco periódico de datos de RuneLite"""
+        if self.settings.get("runelite_sync_enabled", False):
+            self.refresh_runelite_data()
+            # Programar el siguiente refresco
+            self._runelite_refresh_job = self.after(10000, self._periodic_runelite_refresh)
+        else:
+            if hasattr(self, "_runelite_refresh_job"):
+                del self._runelite_refresh_job
+
+    # Returns how many of this item the user bought today
+    def get_today_bought(self, item_id):
+        """Returns how many of this item the user bought today"""
+        if not self.settings.get("runelite_sync_enabled", False):
+            return "-"
+        if not hasattr(self, "runelite_data") or not self.runelite_data:
+            return 0
+        return self.runelite_data.get(item_id, {}).get("today_bought", 0)
+    
     # ==================== SMART AUTO-REFRESH ====================
     # Starts the fast 1-second polling on startup
     def start_fast_sync(self):
@@ -620,7 +730,7 @@ class SimpleAlchApp(ctk.CTk):
     def open_configuration(self):
         self.config_window = ctk.CTkToplevel(self)
         self.config_window.title("Configuration")
-        self.config_window.geometry("420x720")
+        self.config_window.geometry("400x760")
         self.config_window.resizable(False, False)
         self.config_window.transient(self)
         self.config_window.grab_set()
