@@ -17,8 +17,8 @@ class SimpleAlchApp(ctk.CTk):
         super().__init__()
         # Sets the window title, size, and minimum size
         self.title("SimpleAlch - OSRS High Alchemy Tool")
-        self.geometry("1350x780")
-        self.minsize(1250, 700)
+        self.geometry("1125x800")
+        self.minsize(1125, 300)
         # Applies the dark theme
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
@@ -57,13 +57,12 @@ class SimpleAlchApp(ctk.CTk):
         self.after(500, self.load_initial_data)
         self.after(60000, self.background_auto_refresh)
 
-        # RuneLite Sync initialization (mejorado)
+        # RuneLite Sync initialization (limpio - una sola carga)
         self.runelite_sync_var = ctk.BooleanVar(value=self.settings.get("runelite_sync_enabled", False))
-        if self.settings.get("runelite_sync_enabled", False):
-            self.after(600, self.update_runelite_sync)
-            if self.settings.get("runelite_account"):
-                self.after(1100, self.load_runelite_data)
-                self.after(1300, self.populate_table)
+
+        if self.settings.get("runelite_sync_enabled", False) and self.settings.get("runelite_account"):
+            # Solo cargamos los datos una vez al iniciar
+            self.after(800, self.load_runelite_data)
 
     # Loads saved user settings and favorites from config.json when the app starts
     def load_config(self):
@@ -165,32 +164,32 @@ class SimpleAlchApp(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self, corner_radius=6)
         self.main_frame.pack(fill="both", expand=True, padx=12, pady=8)
 
-        columns = ("favorite", "members", "name", "high_alch", "ge_price", "profit", 
-                   "total_profit", "total_investment", "daily_volume", "bought_today", "buy_limit")
+        columns = ("favorite", "members", "name", "high_alch", "effective_price", "profit", 
+                   "total_profit", "total_investment", "daily_volume", "bought_4h", "buy_limit")
         self.tree = ttk.Treeview(self.main_frame, columns=columns, show="headings", height=24)
 
         self.tree.heading("favorite", text="★")
         self.tree.heading("members", text="M")
         self.tree.heading("name", text="Item")
         self.tree.heading("high_alch", text="High Alch")
-        self.tree.heading("ge_price", text="GE Price")
+        self.tree.heading("effective_price", text="GE Price")
         self.tree.heading("profit", text="Profit/Cast")
         self.tree.heading("total_profit", text="Total Profit")
         self.tree.heading("total_investment", text="Total Investment")
         self.tree.heading("daily_volume", text="Daily Volume")
-        self.tree.heading("bought_today", text="Bought Today")
+        self.tree.heading("bought_4h", text="Bought (4h)")
         self.tree.heading("buy_limit", text="Buy Limit")
 
         self.tree.column("favorite", width=35, anchor="center", stretch=False)
         self.tree.column("members", width=35, anchor="center", stretch=False)
-        self.tree.column("name", width=220)
-        self.tree.column("high_alch", width=75, anchor="center")
-        self.tree.column("ge_price", width=75, anchor="center")
-        self.tree.column("profit", width=80, anchor="center")
-        self.tree.column("total_profit", width=95, anchor="center")
-        self.tree.column("total_investment", width=105, anchor="center")
-        self.tree.column("daily_volume", width=100, anchor="center")
-        self.tree.column("bought_today", width=65, anchor="center", stretch=False)
+        self.tree.column("name", width=220, stretch=False)
+        self.tree.column("high_alch", width=110, anchor="center", stretch=False)
+        self.tree.column("effective_price", width=110, anchor="center", stretch=False)
+        self.tree.column("profit", width=110, anchor="center", stretch=False)
+        self.tree.column("total_profit", width=110, anchor="center", stretch=False)
+        self.tree.column("total_investment", width=110, anchor="center", stretch=False)
+        self.tree.column("daily_volume", width=100, anchor="center", stretch=False)
+        self.tree.column("bought_4h", width=80, anchor="center", stretch=False)
         self.tree.column("buy_limit", width=65, anchor="center", stretch=False)
 
         for col in columns:
@@ -200,13 +199,19 @@ class SimpleAlchApp(ctk.CTk):
 
         self.tree.pack(fill="both", expand=True, padx=8, pady=8)
 
-        # Colores para la columna Bought Today
+        # Colores para la columna Bought (4h)
         self.tree.tag_configure("sold_out", background="#ff6b6b", foreground="white")
         self.tree.tag_configure("almost_full", background="#ffd93d")
 
     # Creates the bottom status bar that shows loading messages, sync status, etc
     def _create_status_bar(self):
-        self.status_bar = ctk.CTkLabel(self, text="Loading... • Auto-refresh: Active", anchor="w", font=ctk.CTkFont(size=11))
+        initial_text = "Loading... • Auto-refresh: Active"
+        if self.settings.get("runelite_sync_enabled", False):
+            account = self.settings.get("runelite_account", "")
+            if account:
+                initial_text += f"  •  RuneLite: {account}"
+
+        self.status_bar = ctk.CTkLabel(self, text=initial_text, anchor="w", font=ctk.CTkFont(size=11))
         self.status_bar.pack(fill="x", padx=12, pady=(0, 6))
 
     # ==================== SEARCH ====================
@@ -331,8 +336,14 @@ class SimpleAlchApp(ctk.CTk):
         if not items_to_show:
             return
 
-        nature_cost = int(self.settings["nature_price"]) if self.settings["nature_price"].isdigit() else 0
-        fire_cost = int(self.settings["fire_price"]) if self.settings["fire_price"].isdigit() else 0
+        # Usar precio efectivo (Data Logger > manual/API)
+        if self.settings.get("runelite_sync_enabled", False):
+            nature_cost = self.get_effective_buy_price(561) or int(self.settings["nature_price"]) if self.settings["nature_price"].isdigit() else 0
+            fire_cost = self.get_effective_buy_price(554) or int(self.settings["fire_price"]) if self.settings["fire_price"].isdigit() else 0
+        else:
+            nature_cost = int(self.settings["nature_price"]) if self.settings["nature_price"].isdigit() else 0
+            fire_cost = int(self.settings["fire_price"]) if self.settings["fire_price"].isdigit() else 0
+
         rune_cost = nature_cost + fire_cost if self.settings["fire_method"] == "pay" else nature_cost
         price_type = self.settings["price_type"]
         volume_type = self.settings.get("volume_type", "both")
@@ -347,23 +358,30 @@ class SimpleAlchApp(ctk.CTk):
             buy_limit = item.get("limit", 0) or 0
             is_members = item.get("members", False)
 
-            ge_price = api.get_item_price(self.latest_data, item_id, price_type) or 0
-            profit = high_alch - ge_price - rune_cost
+            effective_price = self.get_effective_buy_price(item_id)
+
+            is_from_runelite = (
+                self.settings.get("runelite_sync_enabled", False) and
+                hasattr(self, "runelite_data") and
+                item_id in self.runelite_data and
+                self.runelite_data[item_id].get("last_buy_price")
+            )
+            display_ge_price = f"{effective_price}*" if is_from_runelite else effective_price
+            profit = high_alch - effective_price - rune_cost
             total_profit = profit * buy_limit if buy_limit else 0
-            total_investment = ge_price * buy_limit if buy_limit else 0
+            total_investment = effective_price * buy_limit if buy_limit else 0
             daily_volume = api.get_item_volume(self.volume_data, item_id, volume_type)
-            bought_today = self.get_today_bought(item_id)
 
             tag = self.item_tags.get(item_id, "")
             fav_display = "★" if tag == "fav" else "☆"
             members_display = "★" if is_members else ""
 
             # Color según progreso de compra (RuneLite)
-            bought_today = self.get_today_bought(item_id)
+            bought_4h = self.get_bought_last_4h(item_id)
             buy_limit = item.get("limit", 0) or 0
 
-            if isinstance(bought_today, int) and buy_limit > 0:
-                progress = bought_today / buy_limit
+            if isinstance(bought_4h, int) and buy_limit > 0:
+                progress = bought_4h / buy_limit
                 if progress >= 1.0:
                     row_tag = "sold_out"
                 elif progress >= 0.7:
@@ -374,8 +392,8 @@ class SimpleAlchApp(ctk.CTk):
                 row_tag = ""
 
             self.tree.insert("", "end", values=(
-                fav_display, members_display, name, high_alch, ge_price, profit, 
-                total_profit, total_investment, daily_volume, bought_today, buy_limit
+                fav_display, members_display, name, high_alch, display_ge_price, profit, 
+                total_profit, total_investment, daily_volume, bought_4h, buy_limit
             ), tags=(str(item_id), row_tag))
 
         self.update_pagination_ui()
@@ -396,27 +414,27 @@ class SimpleAlchApp(ctk.CTk):
                 return data.get("limit", 0) or 0
             else:
                 price_type = self.settings["price_type"]
-                ge_price = api.get_item_price(self.latest_data, item_id, price_type) or 0
+                effective_price = api.get_item_price(self.latest_data, item_id, price_type) or 0
                 nature_cost = int(self.settings["nature_price"]) if self.settings["nature_price"].isdigit() else 0
                 fire_cost = int(self.settings["fire_price"]) if self.settings["fire_price"].isdigit() else 0
                 rune_cost = nature_cost + fire_cost if self.settings["fire_method"] == "pay" else nature_cost
 
-                profit = data.get("highalch", 0) - ge_price - rune_cost
+                profit = data.get("highalch", 0) - effective_price - rune_cost
                 buy_limit = data.get("limit", 0) or 0
 
-                if col == "ge_price":
-                    return ge_price
+                if col == "effective_price":
+                    return effective_price
                 elif col == "profit":
                     return profit
                 elif col == "total_profit":
                     return profit * buy_limit
                 elif col == "total_investment":
-                    return ge_price * buy_limit
+                    return effective_price * buy_limit
                 elif col == "daily_volume":
                     volume_type = self.settings.get("volume_type", "both")
                     return api.get_item_volume(self.volume_data, item_id, volume_type)
-                elif col == "bought_today":
-                    return self.get_today_bought(item_id)
+                elif col == "bought_4h":
+                    return self.get_bought_last_4h(item_id)
                 return 0
 
         self.all_items.sort(key=get_sort_value, reverse=reverse)
@@ -547,6 +565,14 @@ class SimpleAlchApp(ctk.CTk):
             if hasattr(self, "runelite_status_label"):
                 self.runelite_status_label.configure(text="")
 
+        # Actualizar status bar en tiempo real
+        if hasattr(self, "status_bar"):
+            account = self.settings.get("runelite_account", "")
+            if enabled and account:
+                self.status_bar.configure(text=f"Auto-refresh: Active  •  RuneLite: {account}")
+            else:
+                self.status_bar.configure(text="Auto-refresh: Active")
+
         self.save_config()
         self.populate_table()
     # Shows a dropdown to choose your account
@@ -561,7 +587,7 @@ class SimpleAlchApp(ctk.CTk):
         self.update_runelite_sync()   # Refresh the UI
     # Load Data Logger data for the selected account
     def load_runelite_data(self):
-        """Load and process Data Logger data for the selected account"""
+        """Load Data Logger data with 4h window + last buy price per item"""
         account = self.settings.get("runelite_account", "")
         if not account:
             return
@@ -569,11 +595,10 @@ class SimpleAlchApp(ctk.CTk):
         base_path = os.path.expanduser(f"~/.runelite/data-logger/grand-exchange/{account}/")
 
         if not os.path.exists(base_path):
-            print(f"[RuneLite] Folder not found: {account}")
+            print(f"[RuneLite] Folder not found for account: {account}")
             return
 
         try:
-            # Load the main JSON file
             json_files = [f for f in os.listdir(base_path) if f.endswith(".json")]
             if not json_files:
                 print("[RuneLite] No JSON files found")
@@ -583,31 +608,66 @@ class SimpleAlchApp(ctk.CTk):
             with open(json_path, "r", encoding="utf-8") as f:
                 raw_data = json.load(f)
 
-            # Process data into a usable format
             self.runelite_data = {}
-            today = datetime.date.today().isoformat()
+            four_hours_ms = 4 * 60 * 60 * 1000
 
+            # 1. Agrupar todas las compras por item_id
+            purchases_by_item = {}
             for entry in raw_data:
+                if not entry.get("isBuy"):
+                    continue
                 item_id = entry.get("itemId")
                 if not item_id:
                     continue
+                if item_id not in purchases_by_item:
+                    purchases_by_item[item_id] = []
+                purchases_by_item[item_id].append({
+                    "time": entry.get("offerCreationTime", 0),
+                    "quantity": entry.get("quantity", 0),
+                    "price": entry.get("price", 0)
+                })
 
-                if item_id not in self.runelite_data:
-                    self.runelite_data[item_id] = {"today_bought": 0, "all_time": []}
+            # 2. Calcular bought_last_4h + last_buy_price para cada item
+            for item_id, purchases in purchases_by_item.items():
+                purchases.sort(key=lambda x: x["time"])
 
-                # Count buys from today
-                offer_time = entry.get("offerCreationTime", 0)
-                if offer_time:
-                    offer_date = datetime.datetime.fromtimestamp(offer_time / 1000).date().isoformat()
-                    if offer_date == today and entry.get("isBuy"):
-                        self.runelite_data[item_id]["today_bought"] += entry.get("quantity", 0)
+                # Calcular bought_last_4h (ventana deslizante)
+                bought = 0
+                left = 0
+                for right in range(len(purchases)):
+                    while purchases[right]["time"] - purchases[left]["time"] > four_hours_ms:
+                        left += 1
+                    current_sum = sum(p["quantity"] for p in purchases[left:right+1])
+                    bought = max(bought, current_sum)
 
-                self.runelite_data[item_id]["all_time"].append(entry)
+                # Guardar precio más reciente de compra
+                latest_price = purchases[-1]["price"] if purchases else 0
 
-            print(f"[RuneLite] Processed data for {len(self.runelite_data)} items. Today's buys tracked.")
+                self.runelite_data[item_id] = {
+                    "bought_last_4h": bought,
+                    "last_buy_price": latest_price
+                }
+
+            # 3. Extraer precios recientes de Nature y Fire runes (para auto-fill)
+            self.last_nature_price = None
+            self.last_fire_price = None
+
+            for entry in raw_data:
+                if not entry.get("isBuy"):
+                    continue
+                item_id = entry.get("itemId")
+                price = entry.get("price", 0)
+
+                if item_id == 561 and self.last_nature_price is None:
+                    self.last_nature_price = price
+                elif item_id == 554 and self.last_fire_price is None:
+                    self.last_fire_price = price
+
+            print(f"[RuneLite] Loaded 4h sliding window data for {len(self.runelite_data)} items")
+            self.populate_table()
 
         except Exception as e:
-            print(f"[RuneLite] Error loading/processing data: {e}")
+            print(f"[RuneLite] Error loading data: {e}")
 
     def refresh_runelite_data(self):
         """Recarga los datos de RuneLite y actualiza la tabla (para actualizaciones en tiempo real)"""
@@ -624,24 +684,82 @@ class SimpleAlchApp(ctk.CTk):
             print("[RuneLite] Data refreshed (auto)")
 
     def _periodic_runelite_refresh(self):
-        """Refresco periódico de datos de RuneLite"""
-        if self.settings.get("runelite_sync_enabled", False):
-            self.refresh_runelite_data()
-            # Programar el siguiente refresco
-            self._runelite_refresh_job = self.after(10000, self._periodic_runelite_refresh)
-        else:
+        """Chequeo cada 1 segundo. Solo recarga si el archivo realmente cambió."""
+        if not self.settings.get("runelite_sync_enabled", False):
             if hasattr(self, "_runelite_refresh_job"):
                 del self._runelite_refresh_job
+            return
 
-    # Returns how many of this item the user bought today
-    def get_today_bought(self, item_id):
-        """Returns how many of this item the user bought today"""
+        account = self.settings.get("runelite_account", "")
+        if not account:
+            self._runelite_refresh_job = self.after(1000, self._periodic_runelite_refresh)
+            return
+
+        base_path = os.path.expanduser(f"~/.runelite/data-logger/grand-exchange/{account}/")
+
+        if not os.path.exists(base_path):
+            self._runelite_refresh_job = self.after(1000, self._periodic_runelite_refresh)
+            return
+
+        json_files = [f for f in os.listdir(base_path) if f.endswith(".json")]
+        if not json_files:
+            self._runelite_refresh_job = self.after(1000, self._periodic_runelite_refresh)
+            return
+
+        json_path = os.path.join(base_path, json_files[0])
+
+        try:
+            current_mtime = os.path.getmtime(json_path)
+            current_size = os.path.getsize(json_path)
+
+            last_mtime = getattr(self, "_last_runelite_mtime", 0)
+            last_size = getattr(self, "_last_runelite_size", 0)
+
+            if current_mtime != last_mtime or current_size != last_size:
+                self._last_runelite_mtime = current_mtime
+                self._last_runelite_size = current_size
+
+                self.load_runelite_data()
+
+                if hasattr(self, "status_bar"):
+                    self.status_bar.configure(text=f"Auto-refresh: Active  •  RuneLite: {account} (updated)")
+
+            # Chequear cada 1 segundo
+            self._runelite_refresh_job = self.after(1000, self._periodic_runelite_refresh)
+
+        except Exception as e:
+            print(f"[RuneLite] Error checking file: {e}")
+            self._runelite_refresh_job = self.after(1000, self._periodic_runelite_refresh)
+
+    # Returns how many of this item the user Bought (4h)
+    def get_bought_last_4h(self, item_id):
+        """Returns how many of this item were bought in the last 4 hours"""
         if not self.settings.get("runelite_sync_enabled", False):
             return "-"
         if not hasattr(self, "runelite_data") or not self.runelite_data:
             return 0
-        return self.runelite_data.get(item_id, {}).get("today_bought", 0)
+        return self.runelite_data.get(item_id, {}).get("bought_last_4h", 0)
     
+    def get_effective_buy_price(self, item_id):
+        """Devuelve el precio de compra real si existe en Data Logger, si no usa GE"""
+        if self.settings.get("runelite_sync_enabled", False):
+            if hasattr(self, "runelite_data") and item_id in self.runelite_data:
+                price = self.runelite_data[item_id].get("last_buy_price")
+                if price and price > 0:
+                    return price
+
+        # Fallback al precio GE
+        price_type = self.settings.get("price_type", "average")
+        return api.get_item_price(self.latest_data, item_id, price_type) or 0
+    
+    # Returns the most recent buy prices for Nature and Fire runes
+    def get_last_rune_prices(self):
+        """Returns the most recent buy prices for Nature and Fire runes"""
+        return {
+            "nature": self.last_nature_price,
+            "fire": self.last_fire_price
+        }
+
     # ==================== SMART AUTO-REFRESH ====================
     # Starts the fast 1-second polling on startup
     def start_fast_sync(self):
@@ -758,8 +876,17 @@ class SimpleAlchApp(ctk.CTk):
 
         self.nature_entry = ctk.CTkEntry(nature_frame)
         self.nature_entry.pack(side="left", fill="x", expand=True)
-        self.nature_entry.insert(0, self.settings.get("nature_price", ""))
-        ctk.CTkLabel(nature_frame, text="(Leave empty = API)", text_color="gray").pack(side="left", padx=6)
+
+        # Auto-fill from RuneLite recent purchases if available
+        nature_price = self.settings.get("nature_price", "")
+        if not nature_price and self.settings.get("runelite_sync_enabled"):
+            prices = self.get_last_rune_prices()
+            if prices.get("nature"):
+                nature_price = str(prices["nature"])
+
+        self.nature_entry.insert(0, nature_price)
+        label_text = "(from your recent purchases)" if self.settings.get("runelite_sync_enabled") and self.get_last_rune_prices().get("nature") else "(Leave empty = API)"
+        ctk.CTkLabel(nature_frame, text=label_text, text_color="gray").pack(side="left", padx=6)
 
         save_nature_btn = ctk.CTkButton(nature_frame, text="Save", width=55,
                                         command=self.save_nature_price)
@@ -782,8 +909,17 @@ class SimpleAlchApp(ctk.CTk):
 
         self.fire_entry = ctk.CTkEntry(fire_frame)
         self.fire_entry.pack(side="left", fill="x", expand=True)
-        self.fire_entry.insert(0, self.settings.get("fire_price", ""))
-        ctk.CTkLabel(fire_frame, text="(Leave empty = API)", text_color="gray").pack(side="left", padx=6)
+
+        # Auto-fill from RuneLite recent purchases if available
+        fire_price = self.settings.get("fire_price", "")
+        if not fire_price and self.settings.get("runelite_sync_enabled"):
+            prices = self.get_last_rune_prices()
+            if prices.get("fire"):
+                fire_price = str(prices["fire"])
+
+        self.fire_entry.insert(0, fire_price)
+        label_text = "(from your recent purchases)" if self.settings.get("runelite_sync_enabled") and self.get_last_rune_prices().get("fire") else "(Leave empty = API)"
+        ctk.CTkLabel(fire_frame, text=label_text, text_color="gray").pack(side="left", padx=6)
 
         save_fire_btn = ctk.CTkButton(fire_frame, text="Save", width=55,
                                       command=self.save_fire_price)
