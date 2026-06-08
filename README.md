@@ -14,12 +14,12 @@ Displays live Grand Exchange prices and calculates realistic profit using your c
 ## Screenshots
 
 <p align="center">
-  <img src="assets/screenshot1.jpg" 
+  <img src="assets/screenshot1.png" 
   alt="Main Window">
 </p>
 
 <p align="center">
-  <img src="assets/screenshot2.jpg"  alt="Configuration Panel">
+  <img src="assets/screenshot2.png"  alt="Configuration Panel">
 </p>
 
 ## Features
