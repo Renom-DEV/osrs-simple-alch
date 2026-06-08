@@ -446,11 +446,15 @@ class SimpleAlchApp(ctk.CTk):
     def update_runelite_sync(self):
         enabled = self.runelite_sync_var.get()
         self.settings["runelite_sync_enabled"] = enabled
-        
+
+        # Clear previous widgets in the account frame
+        for widget in self.runelite_account_frame.winfo_children():
+            widget.destroy()
+
         if enabled:
             accounts, folder_exists = self.detect_runelite_data_logger()
             self.runelite_accounts = accounts
-            
+
             if not folder_exists:
                 self.runelite_status_label.configure(text="Data Logger plugin not found", text_color="red")
             elif len(accounts) == 0:
@@ -459,19 +463,74 @@ class SimpleAlchApp(ctk.CTk):
                     text_color="red"
                 )
             else:
-                # Show dropdown or linked account
-                if not self.settings.get("runelite_account"):
-                    self.runelite_status_label.configure(text="Select your OSRS account:", text_color="white")
-                    # Show dropdown logic here (we'll handle in config window)
-                else:
+                current_account = self.settings.get("runelite_account", "")
+
+                if current_account:
+                    # Already linked
                     self.runelite_status_label.configure(
-                        text=f"Linked to: {self.settings['runelite_account']}", 
+                        text=f"Linked to: {current_account}", 
                         text_color="#00FF00"
                     )
+                    
+                    # Load data for this account
+                    self.load_runelite_data()
+
+                    # Small Change Account dropdown
+                    change_label = ctk.CTkLabel(self.runelite_account_frame, text="Change Account:")
+                    change_label.pack(side="left", padx=(0, 5))
+
+                    self.account_var = ctk.StringVar(value=current_account)
+                    account_menu = ctk.CTkOptionMenu(
+                        self.runelite_account_frame,
+                        values=accounts,
+                        variable=self.account_var,
+                        width=140,
+                        command=self.change_runelite_account
+                    )
+                    account_menu.pack(side="left")
+
+                else:
+                    # Not linked yet → show selection dropdown
+                    self.runelite_status_label.configure(text="Select your OSRS account:", text_color="white")
+
+                    self.account_var = ctk.StringVar(value=accounts[0] if accounts else "")
+                    account_menu = ctk.CTkOptionMenu(
+                        self.runelite_account_frame,
+                        values=accounts,
+                        variable=self.account_var,
+                        width=160,
+                        command=self.select_runelite_account
+                    )
+                    account_menu.pack(side="left")
         else:
             self.runelite_status_label.configure(text="")
-        
+
         self.save_config()
+    # Shows a dropdown to choose your account
+    def select_runelite_account(self, selected_account):
+        self.settings["runelite_account"] = selected_account
+        self.save_config()
+        self.update_runelite_sync()   # Refresh the UI
+    # After choosing → it saves it and shows “Linked to: YourAccount”
+    def change_runelite_account(self, selected_account):
+        self.settings["runelite_account"] = selected_account
+        self.save_config()
+        self.update_runelite_sync()   # Refresh the UI
+    # Load Data Logger data for the selected account
+    def load_runelite_data(self):
+        """Load Data Logger data for the selected account (called when enabled)"""
+        account = self.settings.get("runelite_account", "")
+        if not account:
+            return
+
+        base_path = os.path.expanduser(f"~/.runelite/data-logger/grand-exchange/{account}/")
+
+        # For now we just print that we detected the folder (we'll expand this later)
+        if os.path.exists(base_path):
+            print(f"[RuneLite] Data folder found for account: {account}")
+            # TODO: Later we will read the .json and .csv files here
+        else:
+            print(f"[RuneLite] Folder not found for account: {account}")
 
     # ==================== SMART AUTO-REFRESH ====================
     # Starts the fast 1-second polling on startup
@@ -672,6 +731,10 @@ class SimpleAlchApp(ctk.CTk):
         # This is where we will dynamically add the account dropdown later
         self.runelite_account_frame = ctk.CTkFrame(self.config_window, fg_color="transparent")
         self.runelite_account_frame.pack(fill="x", padx=25, pady=5)
+
+        # Initialize RuneLite section status when opening the window
+        if hasattr(self, "runelite_sync_var"):
+            self.update_runelite_sync()
 
     # Live update when changing options
     def update_settings_live(self):
