@@ -7,25 +7,48 @@ Displays live Grand Exchange prices and calculates realistic profit using your c
 
 ## Features
 
+### Core Functionality
 - Live GE prices from the official RuneScape Wiki prices API
-- Accurate profit calculation using **your actual Nature and Fire rune costs**
+- Accurate profit calculation using your actual Nature and Fire rune costs
 - Choose between Low / High / Average GE price for calculations
-- **Total Profit** and **Total Investment** columns based on GE buy limits
-- Smart auto-refresh system（fast sync on start, then efficient 60s updates）
-- Hide items you don’t want to see + persistent Favorites filter
+- Total Profit and Total Investment columns based on GE buy limits
+- Smart auto-refresh system (fast sync on startup, then efficient 60s updates)
 - Clean, modern dark interface
 - Lightweight native Windows desktop app
 
-## Screenshots
+### Search & Navigation
+- Real-time search bar with instant filtering
+- Pagination with adjustable items per page (50/100/150)
+- Manual page input
+- Global column sorting (click any header)
 
-> *(Screenshots will be added as the app is developed)*
+### Personalization
+- Favorites system — Right-click any item to mark/unmark as favorite
+- Hide items — Right-click to hide items you don’t want to see
+- Hide Members toggle — Quickly filter out member-only items
+- "Favorites Only" filter
+- "Show Hidden" button (permanently unhides items)
+- "Clear All Favorites" button
+
+### Smart Features
+- Background auto-refresh every 60 seconds
+- Smart fast sync on startup — Quickly polls for latest prices (1s intervals up to 60s)
+- Loading spinner animation during fast sync
+- "Sync failed" message shown after timeout (auto-clears after 3 seconds)
+- Persistent storage — Favorites, hidden items, and settings are saved locally in config.json
+
+### Configuration
+- Easy-to-use settings window that stays open after saving
+- Live table updates when changing settings
+- Shows current API prices for Nature and Fire runes
+- Per-field save buttons for rune prices
 
 ## How It Works
 
 The app fetches data from three official APIs:
-- `/mapping` — Item information (High Alch value, buy limits, etc.)
-- `/latest` — Current GE prices
-- `/24h` — 24-hour trading volume
+- /mapping — Item information (High Alch value, buy limits, etc.)
+- /latest — Current GE prices
+- /24h — 24-hour trading volume
 
 It then calculates profit in real time using the rune costs and price type you define in the Configuration panel.
 
@@ -38,46 +61,32 @@ It then calculates profit in real time using the rune costs and price type you d
 ### Setup
 
 1. Clone the repository:
-   ```bash
    git clone https://github.com/Renom-DEV/osrs-simple-alch.git
    cd osrs-simple-alch
-   ```
 
 2. Create a virtual environment:
-   ```bash
    python -m venv venv
-   ```
 
 3. Activate the virtual environment:
 
-   **Windows:**
-   ```powershell
+   Windows:
    venv\Scripts\activate
-   ```
 
-   **macOS / Linux:**
-   ```bash
+   macOS / Linux:
    source venv/bin/activate
-   ```
 
 4. Install dependencies:
-   ```bash
    pip install -r requirements.txt
-   ```
 
 5. Run the app:
-   ```bash
    python main.py
-   ```
-
-> A packaged `.exe` version will be available in future releases.
 
 ## Usage
 
 1. Launch the app.
-2. Open **Configuration** (⚙ button).
-3. Set your **Nature Rune** and **Fire Rune** costs (leave empty to use live API prices).
-4. Choose your preferred **GE Price type** (Low / High / Average).
+2. Open Configuration (⚙ button).
+3. Set your Nature Rune and Fire Rune costs (leave empty to use live API prices).
+4. Choose your preferred GE Price type (Low / High / Average).
 5. The table will automatically update with accurate profit numbers.
 
 You can hide items you don’t like and mark favorites for quick filtering.
@@ -85,16 +94,16 @@ You can hide items you don’t like and mark favorites for quick filtering.
 ## Configuration Explained
 
 ### Rune Costs
-- **Nature Rune Price**: Your actual cost per nature rune.
-- **Fire Rune Method**:
+- Nature Rune Price: Your actual cost per nature rune.
+- Fire Rune Method:
   - Use Fire Staff / Tome of Fire → 0 gp cost
   - Pay for Fire Runes → Set your fire rune cost
 
 ### Price Settings
 - Choose which GE price to use for calculations:
-  - **Low**
-  - **High**
-  - **Average** (recommended)
+  - Low
+  - High
+  - Average (recommended)
 
 ### Auto-Refresh
 - Smart sync mode on startup (polls every second until update is found)
@@ -104,44 +113,58 @@ You can hide items you don’t like and mark favorites for quick filtering.
 ## Data Sources
 
 All data comes from the official RuneScape Wiki prices API:
-- [Mapping](https://prices.runescape.wiki/api/v1/osrs/mapping)
-- [Latest](https://prices.runescape.wiki/api/v1/osrs/latest)
-- [24h Volume](https://prices.runescape.wiki/api/v1/osrs/24h)
+- Mapping: https://prices.runescape.wiki/api/v1/osrs/mapping
+- Latest: https://prices.runescape.wiki/api/v1/osrs/latest
+- 24h Volume: https://prices.runescape.wiki/api/v1/osrs/24h
 
 ## Tech Stack
 
-- **Python 3**
-- **customtkinter** — Modern dark GUI
-- **requests** — API communication
-- **threading** — Background price updates
-- **PyInstaller** (future) — Single `.exe` packaging
+- Python 3
+- customtkinter — Modern dark GUI
+- requests — API communication
 
 ## Development
 
-This project is being developed iteratively with assistance from **Grok**.
+This project is being developed iteratively with assistance from Grok.
 
 ### Current Status
-The project is in early development. Core features are being built step by step.
+The project is in active development. Core features are complete and functional.
 
 ### Versioning
 We use semantic versioning and GitHub Releases. Each stable milestone will have a release with changelogs.
 
 ## Contributing
 
-This is currently a personal project. Suggestions and feedback are welcome through issues.
+This is an open source project built collaboratively between a human developer and AI (Grok).
+
+Contributions, suggestions, bug reports, and forks are very welcome!
+
+You can:
+- Open issues
+- Submit pull requests
+- Suggest new features
+- Improve the code or documentation
+
+Even small improvements are appreciated.
 
 ## Credits
 
-- Built with assistance from **Grok** (xAI)
-- Developed by **Renom-DEV** (Jesús Javier)
-- Data provided by the [RuneScape Wiki](https://oldschool.runescape.wiki/) prices API
+- Developed by: Renom-DEV (Jesús Javier)
+- Built with assistance from: Grok (xAI)
+- Data provided by: RuneScape Wiki Prices API
 
 ## License
 
-This project is currently unlicensed. All rights reserved.
+This project is licensed under the MIT License — see the LICENSE file for details.
+
+This means you are free to:
+- Use the project commercially or privately
+- Modify it
+- Distribute it
+- Fork it
+
+As long as you include the original license and copyright notice.
 
 ---
 
 *Last updated: June 2026*
-
----

@@ -3,6 +3,7 @@ from tkinter import ttk, Menu
 import api
 import json
 import os
+import tkinter as tk
 
 CONFIG_FILE = "config.json"
 
@@ -13,6 +14,18 @@ class SimpleAlchApp(ctk.CTk):
         self.title("SimpleAlch - OSRS High Alchemy Tool")
         self.geometry("1350x780")
         self.minsize(1250, 700)
+
+        # === App Icon ===
+        icon_path = os.path.join(os.path.dirname(__file__), "logo.png")
+        if os.path.exists(icon_path):
+            try:
+                self.icon_image = tk.PhotoImage(file=icon_path)
+                self.after(300, lambda: self.iconphoto(False, self.icon_image))
+            except Exception as e:
+                print(f"Icon error: {e}")
+
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
 
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
