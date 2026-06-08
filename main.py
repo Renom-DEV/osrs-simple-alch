@@ -1,6 +1,10 @@
 import customtkinter as ctk
-from tkinter import ttk
+from tkinter import ttk, Menu
 import api
+import json
+import os
+
+CONFIG_FILE = "config.json"
 
 class SimpleAlchApp(ctk.CTk):
     def __init__(self):
@@ -23,9 +27,22 @@ class SimpleAlchApp(ctk.CTk):
         self.mapping_data = {}
         self.latest_data = {}
         self.all_items = []
+        self.item_tags = {}
+        self.show_favorites_only = False
         self.current_page = 1
         self.items_per_page = 100
         self.search_query = ""
+        
+        # Hide members logic
+
+        self.hide_members = False
+
+        # Smart Fast Sync variables
+        self.fast_sync_active = False
+        self.fast_sync_attempts = 0
+        self.max_fast_sync_attempts = 60
+
+        self.load_config()
 
         self._create_top_bar()
         self._create_search_and_pagination()
@@ -34,6 +51,27 @@ class SimpleAlchApp(ctk.CTk):
 
         self.after(500, self.load_initial_data)
         self.after(60000, self.background_auto_refresh)
+
+    def load_config(self):
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.settings = data.get("settings", self.settings)
+                    self.item_tags = {int(k): v for k, v in data.get("item_tags", {}).items()}
+            except Exception as e:
+                print(f"Failed to load config: {e}")
+
+    def save_config(self):
+        data = {
+            "settings": self.settings,
+            "item_tags": self.item_tags
+        }
+        try:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"Failed to save config: {e}")
 
     def _create_top_bar(self):
         self.top_bar = ctk.CTkFrame(self, height=45, corner_radius=0)
@@ -51,11 +89,28 @@ class SimpleAlchApp(ctk.CTk):
                                         command=self.open_configuration)
         self.config_btn.pack(side="right", padx=8, pady=6)
 
+        self.fav_only_var = ctk.BooleanVar(value=False)
+        fav_check = ctk.CTkCheckBox(self.top_bar, text="Favorites Only", 
+                                    variable=self.fav_only_var,
+                                    command=self.toggle_favorites_filter)
+        fav_check.pack(side="right", padx=12)
+
+        hide_members_check = ctk.CTkCheckBox(self.top_bar, text="Hide Members", 
+                                             command=self.toggle_hide_members)
+        hide_members_check.pack(side="right", padx=8)
+
+        clear_fav_btn = ctk.CTkButton(self.top_bar, text="Clear Favorites", width=110,
+                                      command=self.clear_all_favorites)
+        clear_fav_btn.pack(side="right", padx=8)
+
+        show_hidden_btn = ctk.CTkButton(self.top_bar, text="Show Hidden", width=95,
+                                        command=self.show_hidden_items)
+        show_hidden_btn.pack(side="right", padx=8)
+
     def _create_search_and_pagination(self):
         self.search_pagination_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.search_pagination_frame.pack(fill="x", padx=12, pady=(3, 0))
 
-        # Search Bar
         ctk.CTkLabel(self.search_pagination_frame, text="Search:").pack(side="left", padx=(0, 5))
         self.search_entry = ctk.CTkEntry(self.search_pagination_frame, width=250, placeholder_text="Search item name...")
         self.search_entry.pack(side="left", padx=(0, 8))
@@ -65,7 +120,6 @@ class SimpleAlchApp(ctk.CTk):
                                   command=self.clear_search)
         clear_btn.pack(side="left", padx=(0, 15))
 
-        # Items per page
         ctk.CTkLabel(self.search_pagination_frame, text="Show:").pack(side="left", padx=(0, 4))
         self.items_per_page_var = ctk.StringVar(value="100")
         items_menu = ctk.CTkOptionMenu(
@@ -75,7 +129,6 @@ class SimpleAlchApp(ctk.CTk):
         )
         items_menu.pack(side="left", padx=(0, 15))
 
-        # Pagination
         self.prev_btn = ctk.CTkButton(self.search_pagination_frame, text="<", width=35,
                                       command=self.prev_page)
         self.prev_btn.pack(side="left", padx=3)
@@ -98,9 +151,10 @@ class SimpleAlchApp(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self, corner_radius=6)
         self.main_frame.pack(fill="both", expand=True, padx=12, pady=8)
 
-        columns = ("members", "name", "high_alch", "ge_price", "profit", "total_profit", "total_investment", "buy_limit")
+        columns = ("favorite", "members", "name", "high_alch", "ge_price", "profit", "total_profit", "total_investment", "buy_limit")
         self.tree = ttk.Treeview(self.main_frame, columns=columns, show="headings", height=24)
 
+        self.tree.heading("favorite", text="★")
         self.tree.heading("members", text="M")
         self.tree.heading("name", text="Item")
         self.tree.heading("high_alch", text="High Alch")
@@ -110,7 +164,8 @@ class SimpleAlchApp(ctk.CTk):
         self.tree.heading("total_investment", text="Total Investment")
         self.tree.heading("buy_limit", text="Buy Limit")
 
-        self.tree.column("members", width=45, anchor="center", stretch=False)
+        self.tree.column("favorite", width=35, anchor="center", stretch=False)
+        self.tree.column("members", width=35, anchor="center", stretch=False)
         self.tree.column("name", width=220)
         self.tree.column("high_alch", width=75, anchor="center")
         self.tree.column("ge_price", width=75, anchor="center")
@@ -121,6 +176,8 @@ class SimpleAlchApp(ctk.CTk):
 
         for col in columns:
             self.tree.heading(col, command=lambda c=col: self.sort_by_column(c))
+
+        self.tree.bind("<Button-3>", self.show_context_menu)
 
         self.tree.pack(fill="both", expand=True, padx=8, pady=8)
 
@@ -178,10 +235,24 @@ class SimpleAlchApp(ctk.CTk):
         return max(1, (len(items) + self.items_per_page - 1) // self.items_per_page)
 
     def get_filtered_items(self):
+        items = self.all_items
+
+        # Search filter
         if self.search_query:
-            return [item for item in self.all_items 
-                    if self.search_query in item[1].get("name", "").lower()]
-        return self.all_items
+            items = [item for item in items if self.search_query in item[1].get("name", "").lower()]
+
+        # Favorites filter
+        if self.show_favorites_only:
+            items = [item for item in items if self.item_tags.get(item[0]) == "fav"]
+
+        # Hide Members filter (NEW)
+        if self.hide_members:
+            items = [item for item in items if not item[1].get("members", False)]
+
+        # Remove manually hidden items
+        items = [item for item in items if self.item_tags.get(item[0]) != "hidden"]
+
+        return items
 
     def update_pagination_ui(self):
         total_pages = self.get_total_pages()
@@ -211,9 +282,17 @@ class SimpleAlchApp(ctk.CTk):
                         filtered_items.append((item_id, item))
 
             self.all_items = sorted(filtered_items, key=lambda x: x[1].get("name", "").lower())
-            self.status_bar.configure(text=f"Loaded {len(self.all_items)} tradeable items • Auto-refresh: Active")
+
+            for item_id, _ in self.all_items:
+                if item_id not in self.item_tags:
+                    self.item_tags[item_id] = ""
+
+            self.status_bar.configure(text=f"Loaded {len(self.all_items)} tradeable items • Starting sync...")
             self.current_page = 1
             self.populate_table()
+
+            # Start smart fast sync safely after everything is ready
+            self.after(1000, self.start_fast_sync)
         else:
             self.status_bar.configure(text="Failed to load data from API")
 
@@ -251,11 +330,13 @@ class SimpleAlchApp(ctk.CTk):
             total_profit = profit * buy_limit if buy_limit else 0
             total_investment = ge_price * buy_limit if buy_limit else 0
 
+            tag = self.item_tags.get(item_id, "")
+            fav_display = "★" if tag == "fav" else "☆"
             members_display = "★" if is_members else ""
 
             self.tree.insert("", "end", values=(
-                members_display, name, high_alch, ge_price, profit, total_profit, total_investment, buy_limit
-            ))
+                fav_display, members_display, name, high_alch, ge_price, profit, total_profit, total_investment, buy_limit
+            ), tags=(str(item_id),))
 
         self.update_pagination_ui()
 
@@ -297,8 +378,95 @@ class SimpleAlchApp(ctk.CTk):
         self.current_page = 1
         self.populate_table()
 
+    # ==================== TAG SYSTEM ====================
+    def set_item_tag(self, item_id, tag):
+        self.item_tags[item_id] = tag
+        self.save_config()
+        self.populate_table()
+
+    def toggle_favorites_filter(self):
+        self.show_favorites_only = self.fav_only_var.get()
+        self.current_page = 1
+        self.populate_table()
+
+    def toggle_hide_members(self):
+        self.hide_members = not self.hide_members
+        self.current_page = 1
+        self.populate_table()
+
+    def clear_all_favorites(self):
+        for item_id in list(self.item_tags.keys()):
+            if self.item_tags[item_id] == "fav":
+                self.item_tags[item_id] = ""
+        self.save_config()
+        self.populate_table()
+        self.status_bar.configure(text="All favorites cleared")
+
+    def show_hidden_items(self):
+        hidden_count = 0
+        for item_id in list(self.item_tags.keys()):
+            if self.item_tags.get(item_id) == "hidden":
+                self.item_tags[item_id] = ""
+                hidden_count += 1
+
+        if hidden_count == 0:
+            self.status_bar.configure(text="No hidden items")
+        else:
+            self.populate_table()
+            self.status_bar.configure(text=f"Unhid {hidden_count} items")
+
+    # ==================== SMART AUTO-REFRESH ON STARTUP ====================
+    def start_fast_sync(self):
+        """Start fast polling with loading animation"""
+        self.fast_sync_active = True
+        self.fast_sync_attempts = 0
+        self.spinner_index = 0
+        self.status_bar.configure(text="Syncing with latest prices... -")
+        self.fast_sync_step()
+
+    def fast_sync_step(self):
+        if not self.fast_sync_active:
+            return
+
+        self.fast_sync_attempts += 1
+
+        # Update spinner
+        spinner = ['-', '\\', '|', '/'][self.spinner_index % 4]
+        self.spinner_index += 1
+        self.status_bar.configure(text=f"Syncing with latest prices... {spinner}")
+
+        try:
+            new_latest = api.fetch_latest()
+            if new_latest and new_latest != self.latest_data:
+                # Success - new data found
+                self.latest_data = new_latest
+                self.populate_table()
+                self.fast_sync_active = False
+                self.status_bar.configure(text=f"Synced! • {len(self.all_items)} items • Auto-refresh: Active")
+                self.after(60000, self.background_auto_refresh)
+                return
+
+        except Exception as e:
+            print(f"Fast sync error: {e}")
+
+        # Continue or timeout
+        if self.fast_sync_attempts < self.max_fast_sync_attempts:
+            self.after(1000, self.fast_sync_step)
+        else:
+            # Timeout after 60 seconds
+            self.fast_sync_active = False
+            self.status_bar.configure(text="Sync failed after 60s. Using cached data.")
+            # Clear message after 3 seconds
+            self.after(3000, lambda: self.status_bar.configure(
+                text=f"Loaded {len(self.all_items)} tradeable items • Auto-refresh: Active"
+            ))
+            self.after(60000, self.background_auto_refresh)
+            
     # ==================== BACKGROUND AUTO-REFRESH ====================
     def background_auto_refresh(self):
+        if self.fast_sync_active:
+            return
+
         try:
             new_latest = api.fetch_latest()
             if new_latest:
@@ -308,8 +476,34 @@ class SimpleAlchApp(ctk.CTk):
         except Exception as e:
             print(f"Auto-refresh error: {e}")
 
-        # Schedule next refresh in 60 seconds
         self.after(60000, self.background_auto_refresh)
+
+    # ==================== CONTEXT MENU ====================
+    def show_context_menu(self, event):
+        item = self.tree.identify_row(event.y)
+        if not item:
+            return
+
+        tags = self.tree.item(item, "tags")
+        if not tags:
+            return
+
+        item_id = int(tags[0])
+        current_tag = self.item_tags.get(item_id, "")
+
+        menu = Menu(self, tearoff=0)
+
+        if current_tag == "fav":
+            menu.add_command(label="Remove from Favorites", command=lambda: self.set_item_tag(item_id, ""))
+        else:
+            menu.add_command(label="Add to Favorites", command=lambda: self.set_item_tag(item_id, "fav"))
+
+        if current_tag == "hidden":
+            menu.add_command(label="Unhide Item", command=lambda: self.set_item_tag(item_id, ""))
+        else:
+            menu.add_command(label="Hide Item", command=lambda: self.set_item_tag(item_id, "hidden"))
+
+        menu.tk_popup(event.x_root, event.y_root)
 
     # ==================== CONFIGURATION ====================
     def open_configuration(self):
@@ -335,7 +529,6 @@ class SimpleAlchApp(ctk.CTk):
         )
         self.price_label.pack(pady=(0, 10))
 
-        # Nature Rune
         ctk.CTkLabel(self.config_window, text="Nature Rune Price (gp)").pack(anchor="w", padx=25)
         nature_frame = ctk.CTkFrame(self.config_window, fg_color="transparent")
         nature_frame.pack(fill="x", padx=25, pady=3)
@@ -348,7 +541,6 @@ class SimpleAlchApp(ctk.CTk):
                                         command=self.save_nature_price)
         save_nature_btn.pack(side="left", padx=6)
 
-        # Fire Rune Method
         ctk.CTkLabel(self.config_window, text="Fire Rune Method").pack(anchor="w", padx=25, pady=(8, 0))
         self.fire_method_var = ctk.StringVar(value=self.settings.get("fire_method", "staff"))
         ctk.CTkRadioButton(self.config_window, text="Use Fire Staff / Tome of Fire (Free)", 
@@ -358,7 +550,6 @@ class SimpleAlchApp(ctk.CTk):
                            variable=self.fire_method_var, value="pay",
                            command=self.update_settings_live).pack(anchor="w", padx=25)
 
-        # Fire Rune Price
         ctk.CTkLabel(self.config_window, text="Fire Rune Price (if paying)").pack(anchor="w", padx=25, pady=(8, 0))
         fire_frame = ctk.CTkFrame(self.config_window, fg_color="transparent")
         fire_frame.pack(fill="x", padx=25, pady=3)
@@ -371,7 +562,6 @@ class SimpleAlchApp(ctk.CTk):
                                       command=self.save_fire_price)
         save_fire_btn.pack(side="left", padx=6)
 
-        # GE Price Type
         ctk.CTkLabel(self.config_window, text="GE Price Type").pack(anchor="w", padx=25, pady=(8, 0))
         self.price_type_var = ctk.StringVar(value=self.settings.get("price_type", "average"))
         ctk.CTkRadioButton(self.config_window, text="Low Price", variable=self.price_type_var, value="low",
@@ -383,10 +573,12 @@ class SimpleAlchApp(ctk.CTk):
 
     def update_settings_live(self):
         self.settings["fire_method"] = self.fire_method_var.get()
+        self.save_config()
         self.populate_table()
 
     def update_price_type_live(self):
         self.settings["price_type"] = self.price_type_var.get()
+        self.save_config()
         self.populate_table()
         price_type = self.settings["price_type"]
         nature_api_price = api.get_item_price(self.latest_data, 561, price_type) or 0
@@ -397,10 +589,12 @@ class SimpleAlchApp(ctk.CTk):
 
     def save_nature_price(self):
         self.settings["nature_price"] = self.nature_entry.get().strip()
+        self.save_config()
         self.populate_table()
 
     def save_fire_price(self):
         self.settings["fire_price"] = self.fire_entry.get().strip()
+        self.save_config()
         self.populate_table()
 
 
