@@ -1,7 +1,7 @@
 # OSRS Simple Alch
 
 <p align="center">
-  <img src="assets/banner.png" alt="SimpleAlch Banner" width="100%">
+  <img src="assets/banner.jpg" alt="SimpleAlch Banner" width="100%">
 </p>
 
 <br>
