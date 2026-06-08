@@ -1,9 +1,25 @@
 # OSRS Simple Alch
 
+<p align="center">
+  <img src="assets/banner.png" alt="SimpleAlch Banner" width="100%">
+</p>
+
+<br>
+
 **Simple OSRS High Alchemy desktop tool** built with Grok.  
 Displays live Grand Exchange prices and calculates realistic profit using your custom Nature and Fire rune costs. Features a clean table with **Total Profit** and **Total Investment** based on buy limits, smart auto-refresh, and personal hide/favorites system.
 
 > Info displayer only — no botting or game control.
+
+## Screenshots
+
+<p align="center">
+  <img src="assets/screenshot1.png" width="800" alt="Main Window">
+</p>
+
+<p align="center">
+  <img src="assets/screenshot2.png" width="800" alt="Configuration Panel">
+</p>
 
 ## Features
 
