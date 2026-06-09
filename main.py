@@ -336,10 +336,16 @@ class SimpleAlchApp(ctk.CTk):
         if not items_to_show:
             return
 
-        # Usar precio efectivo (Data Logger > manual/API)
+        # Calcular costo de runas (prioriza Data Logger si está activado)
         if self.settings.get("runelite_sync_enabled", False):
-            nature_cost = self.get_effective_buy_price(561) or int(self.settings["nature_price"]) if self.settings["nature_price"].isdigit() else 0
-            fire_cost = self.get_effective_buy_price(554) or int(self.settings["fire_price"]) if self.settings["fire_price"].isdigit() else 0
+            nature_cost = self.get_effective_buy_price(561)
+            fire_cost = self.get_effective_buy_price(554)
+
+            # Si no hay precio reciente en Data Logger, usa el manual
+            if not nature_cost:
+                nature_cost = int(self.settings["nature_price"]) if self.settings["nature_price"].isdigit() else 0
+            if not fire_cost:
+                fire_cost = int(self.settings["fire_price"]) if self.settings["fire_price"].isdigit() else 0
         else:
             nature_cost = int(self.settings["nature_price"]) if self.settings["nature_price"].isdigit() else 0
             fire_cost = int(self.settings["fire_price"]) if self.settings["fire_price"].isdigit() else 0
